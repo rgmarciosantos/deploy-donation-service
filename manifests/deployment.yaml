@@ -92,7 +92,7 @@ spec:
         - name: donation-service
           # A tag é atualizada AUTOMATICAMENTE pelo CI do repo donation-service
           # a cada push na main (não edite a tag manualmente).
-          image: 042702827117.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:1429ec9e0ea8b3b88e740683578f0339a7c7f4ba
+          image: 042702827117.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:95ef3701fdc62df14f8eafebfc404b50d340307d
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh

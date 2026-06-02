@@ -1,28 +1,28 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: volunteer-service
-  namespace: solidarytech-volunteer
+  name: donation-service
+  namespace: solidarytech-donation
   labels:
-    app.kubernetes.io/name: volunteer-service
-    app.kubernetes.io/component: volunteer
+    app.kubernetes.io/name: donation-service
+    app.kubernetes.io/component: donation
     app.kubernetes.io/part-of: solidarytech
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-    # Path público no singular (/volunteer) -> rota real da app (/volunteers).
-    # Preserva o subpath: /volunteer/1 -> /volunteers/1.
-    nginx.ingress.kubernetes.io/rewrite-target: /volunteers$1$2
+    # Path público no singular (/donation) -> rota real da app (/donations).
+    # O $1$2 preserva a barra e eventuais subpaths sem quebrar.
+    nginx.ingress.kubernetes.io/rewrite-target: /donations$1$2
 spec:
   ingressClassName: nginx
   rules:
     - host: solidarytech.pt
       http:
         paths:
-          - path: /volunteer(/|$)(.*)
+          - path: /donation(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
               service:
-                name: volunteer-service
+                name: donation-service
                 port:
-                  number: 8083
+                  number: 8082

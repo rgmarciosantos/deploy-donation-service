@@ -1,27 +1,33 @@
-# Deploy Volunteer Service
+# Deploy Donation Service
 
-Repositório GitOps com os manifestos Kubernetes do **Volunteer Service** da plataforma SolidaryTech.
+Repositório GitOps com os manifestos Kubernetes do **Donation Service** da plataforma SolidaryTech.
 
 ## Visão Geral
 
-Monitorado pelo **ArgoCD**. A tag da imagem em `manifests/deployment.yaml` é atualizada **automaticamente** pelo CI do repositório [`volunteer-service`](https://github.com/brianmonteiro54/volunteer-service) a cada push na `main`. Não edite a tag manualmente.
+Este repositório é monitorado pelo **ArgoCD**. A tag da imagem Docker em `manifests/deployment.yaml` é atualizada **automaticamente** pelo pipeline de CI do repositório [`donation-service`](https://github.com/brianmonteiro54/donation-service) a cada push na branch `main`. Não edite a tag manualmente.
 
-Stack: **Python/Flask + DynamoDB** · porta `8083` · namespace `solidarytech-volunteer`.
-
-> Diferente do ngo/donation, este serviço **não usa PostgreSQL** — então não há initContainer de `DATABASE_URL`, nem `init-db`, nem `externalsecret`/`secretstore`. O acesso ao DynamoDB usa as credenciais do secret `aws-credentials` (criado pelo Terraform no namespace).
+Stack: **Go + PostgreSQL (RDS) + SQS** · porta `8082` · namespace `solidarytech-donation`.
 
 ## Manifestos
 
 | Arquivo | Descrição |
 |---|---|
-| `deployment.yaml` | Deployment (2 réplicas, rolling update, probes); usa o CMD gunicorn do Dockerfile |
-| `service.yaml` | Service ClusterIP na porta 8083 |
-| `ingress.yaml` | Ingress nginx, rota `/volunteers` |
+| `deployment.yaml` | Deployment (2 réplicas, rolling update, probes) + initContainer que monta a `DATABASE_URL` |
+| `service.yaml` | Service ClusterIP na porta 8082 |
+| `ingress.yaml` | Ingress nginx, rota `/donations` |
+| `externalsecret.yaml` | ExternalSecrets: credenciais do RDS + config da app (DB host/port/name, SQS URL) |
+| `secretstore.yaml` | SecretStore apontando para o AWS Secrets Manager (us-east-1) |
+| `init-db.yaml` | ConfigMap + Job (sync hook wave 1) que cria a tabela `donations` |
 
 ## Pré-requisitos (uma vez)
 
-1. **Infra aplicada** (`terraform apply`): cria o ECR `solidarytech/volunteer-service`, a tabela DynamoDB `solidarytech-<env>-volunteers`, os namespaces e o secret `aws-credentials`.
-2. **Nome da tabela**: em `deployment.yaml`, ajuste `AWS_DYNAMODB_TABLE` para o nome real (ex.: `solidarytech-prod-volunteers` ou `solidarytech-dev-volunteers`, conforme o ambiente).
-3. **App no ArgoCD** apontando para este repositório (`path: manifests`, namespace `solidarytech-volunteer`).
+1. **Infra aplicada** (`terraform apply`): cria o ECR `solidarytech/donation-service`, o RDS `donation_db`, a fila SQS, os namespaces e o secret `aws-credentials` em cada namespace.
+2. **Secret de config no AWS Secrets Manager** chamado `solidarytech/donation-service` com as chaves:
+   - `DONATION_DB_HOST` → endpoint do RDS donation (`terraform output rds_endpoints`)
+   - `DONATION_DB_PORT` → `5432`
+   - `DONATION_DB_NAME` → `donation_db`
+   - `DONATION_SQS_URL` → URL da fila SQS (opcional)
+3. **UUID do secret do RDS**: em `externalsecret.yaml`, troque `rds!db-REPLACE_WITH_DONATION_DB_SECRET_UUID` pelo nome real (Console AWS → Secrets Manager → filtre por `rds!db-`).
+4. **App no ArgoCD** apontando para este repositório (`path: manifests`, namespace `solidarytech-donation`).
 
-> **Acesso público:** `http://solidarytech.pt/volunteer` (o ingress reescreve o path singular para a rota real `/volunteers` da aplicação). Aponte o DNS de `solidarytech.pt` para o IP/Hostname do Load Balancer do ingress-nginx. O subpath também funciona: `http://solidarytech.pt/volunteer/1` → `/volunteers/1`.
+> **Acesso público:** `http://solidarytech.pt/donation` (o ingress reescreve o path singular para a rota real `/donations` da aplicação). Aponte o DNS de `solidarytech.pt` para o IP/Hostname do Load Balancer do ingress-nginx.

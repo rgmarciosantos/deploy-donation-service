@@ -1,0 +1,105 @@
+## ──────────────────────────────────────────────
+## Job: inicialização do banco do donation-service
+## Roda como Sync Hook do ArgoCD (wave 1), depois dos ExternalSecrets
+## (wave 0) e antes do Deployment (wave 2).
+## O SQL é idempotente (IF NOT EXISTS) — seguro re-rodar.
+## ──────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: donation-db-init-sql
+  namespace: solidarytech-donation
+  labels:
+    app.kubernetes.io/name: donation-service
+    app.kubernetes.io/component: donation
+    app.kubernetes.io/part-of: solidarytech
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS donations (
+        id SERIAL PRIMARY KEY,
+        ngo_id INT NOT NULL,
+        amount NUMERIC(10, 2) NOT NULL,
+        donor_name VARCHAR(100) NOT NULL,
+        status VARCHAR(20) NOT NULL, -- Ex: APPROVED, PENDING
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: donation-db-init
+  namespace: solidarytech-donation
+  labels:
+    app.kubernetes.io/name: donation-service
+    app.kubernetes.io/component: donation
+    app.kubernetes.io/part-of: solidarytech
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 5
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: donation-service
+        app.kubernetes.io/component: db-init
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: psql-init
+          image: postgres:16-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Executando init.sql em ${PGHOST}:${PGPORT}/${PGDATABASE}..."
+              psql -f /mnt/init.sql
+              RESULT=$?
+              if [ $RESULT -eq 0 ]; then
+                echo "Init do banco donation concluído com sucesso!"
+              else
+                echo "Erro ao executar init.sql (exit code: $RESULT)"
+                exit $RESULT
+              fi
+          env:
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: donation-service-config
+                  key: DONATION_DB_HOST
+            - name: PGPORT
+              valueFrom:
+                secretKeyRef:
+                  name: donation-service-config
+                  key: DONATION_DB_PORT
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: donation-service-config
+                  key: DONATION_DB_NAME
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: donation-service-rds
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: donation-service-rds
+                  key: password
+            - name: PGSSLMODE
+              value: "require"
+          volumeMounts:
+            - name: init-sql
+              mountPath: /mnt
+      volumes:
+        - name: init-sql
+          configMap:
+            name: donation-db-init-sql
